@@ -1,0 +1,19 @@
+node_modules
+dist
+.env
+npm-debug.log*
+yarn-debug.log*
+
+# Frontend build output
+src/dist/
+
+# Backend build output
+server/dist/
+
+# Firebase
+# For security, it's common to ignore Firebase credentials if not managed via env vars
+# firebase-debug.log
+
+# Vercel/Netlify specific
+.vercel/
+.netlify/
