@@ -1,16 +1,21 @@
+// client/src/components/Auth.tsx
+
 import React, { useState } from 'react';
-import { auth } from '../firebase'; // Import the auth instance
+import { auth } from '../firebase';
 import {
-  createUserWithEmailAndPassword, // For registration
-  signInWithEmailAndPassword      // For login
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword
 } from 'firebase/auth';
+import { useNavigate } from 'react-router-dom';
 
 const Auth: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [isRegistering, setIsRegistering] = useState(true); // New state to toggle between register/login
+  const [isRegistering, setIsRegistering] = useState(true);
+
+  const navigate = useNavigate();
 
   const handleAuthAction = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,37 +24,26 @@ const Auth: React.FC = () => {
 
     try {
       if (isRegistering) {
-        // REGISTRATION LOGIC
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         setMessage('Registration successful! You can now log in.');
         console.log('User registered:', userCredential.user);
+        setIsRegistering(false); // Optionally switch to login form after registration
       } else {
-        // LOGIN LOGIC
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
         setMessage('Login successful!');
         console.log('User logged in:', userCredential.user);
-        // Important: We'll implement app-wide authentication state later,
-        // so the form won't disappear yet, but the user is logged in internally.
+        navigate('/'); // Navigate to game page after successful login
       }
       setEmail('');
       setPassword('');
     } catch (err: any) {
-      // Handle Firebase specific errors for both register and login
-      if (err.code === 'auth/email-already-in-use') {
-        setError('This email is already in use. Please try another or log in.');
-      } else if (err.code === 'auth/weak-password') {
-        setError('Password is too weak. It must be at least 6 characters.');
-      } else if (err.code === 'auth/invalid-credential') { // Generic for wrong password/user not found
-        setError('Invalid email or password.');
-      } else if (err.code === 'auth/user-not-found') { // Login specific
-        setError('No user found with this email.');
-      } else if (err.code === 'auth/wrong-password') { // Login specific
-        setError('Incorrect password.');
-      } else {
-        setError(`${isRegistering ? 'Registration' : 'Login'} failed: ${err.message}`);
-      }
-      console.error(`${isRegistering ? 'Registration' : 'Login'} error:`, err);
+      // ... (your existing error handling) ...
     }
+  };
+
+  // NEW FUNCTION: Handle playing anonymously
+  const handlePlayAnonymously = () => {
+    navigate('/'); // Navigate to the game page without logging in
   };
 
   return (
@@ -101,6 +95,16 @@ const Auth: React.FC = () => {
         >
           {isRegistering ? 'Already have an account? Login' : 'Need an account? Register'}
         </button>
+
+        {/* NEW BUTTON: Play Anonymously */}
+        <div className="flex items-center justify-between mt-4">
+            <button
+                onClick={handlePlayAnonymously}
+                className="bg-gray-400 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full"
+            >
+                Play Anonymously
+            </button>
+        </div>
 
         {message && <p className="text-green-500 text-center mt-4">{message}</p>}
         {error && <p className="text-red-500 text-center mt-4">{error}</p>}

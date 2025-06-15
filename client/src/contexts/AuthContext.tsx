@@ -1,14 +1,13 @@
-// client/src/contexts/AuthContext.tsx
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { auth } from '../firebase'; // <--- CHANGED: from '../firebaseConfig' to '../firebase'
-import type { User } from 'firebase/auth'; // <-- Add 'type' keyword here
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
+import { auth } from '../firebase';
+import type { User } from 'firebase/auth';
 
 interface AuthContextType {
   currentUser: User | null;
   loading: boolean;
 }
 
-// Create the context
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Custom hook to use the AuthContext
