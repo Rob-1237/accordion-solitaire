@@ -4,7 +4,7 @@ import { getAuth } from "firebase/auth"; // For Firebase Authentication
 import { getFirestore } from "firebase/firestore"; // For Cloud Firestore
 
 // Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional (for hosting)
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
