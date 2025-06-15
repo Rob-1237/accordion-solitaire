@@ -1,134 +1,179 @@
-import React, { useRef } from 'react';
+import React, { useRef, useMemo, useCallback } from 'react';
 import { useDrag, useDrop } from 'react-dnd';
+import type { DropTargetMonitor } from 'react-dnd';
+import '../styles/card-sprite.css';
 
 // Define the drag item type (used by react-dnd)
-export const ItemTypes = {
+const ItemTypes = {
   CARD: 'card',
+} as const;
+
+// Move suit symbols to a constant
+const SUIT_SYMBOLS = {
+  H: '♥',
+  D: '♦',
+  C: '♣',
+  S: '♠',
+} as const;
+
+// Helper function to get suit symbol
+const getSuitSymbol = (suit: string) => {
+  switch (suit) {
+    case 'hearts': return '♥';
+    case 'diamonds': return '♦';
+    case 'clubs': return '♣';
+    case 'spades': return '♠';
+    case 'H': return '♥';
+    case 'D': return '♦';
+    case 'C': return '♣';
+    case 'S': return '♠';
+    default: return suit;
+  }
+};
+
+// Helper function to format the rank for the class name
+const formatRank = (rank: string) => {
+  switch (rank.toLowerCase()) {
+    case 'ace': return 'A';
+    case 'jack': return 'J';
+    case 'queen': return 'Q';
+    case 'king': return 'K';
+    default: return rank;
+  }
+};
+
+// Helper function to format the suit for the class name
+const formatSuit = (suit: string) => {
+  switch (suit.toLowerCase()) {
+    case 'hearts': return 'H';
+    case 'diamonds': return 'D';
+    case 'clubs': return 'C';
+    case 'spades': return 'S';
+    default: return suit;
+  }
 };
 
 // Define the props interface for the Card component
 interface CardProps {
-  id: string; // Unique ID for this card (e.g., "AS", "10H")
-  rank: string; // Rank of the card (e.g., "A", "2", "K")
-  suit: string; // Suit of the card (e.g., "H", "D", "C", "S")
-  onDropCard: (draggedId: string, targetId: string) => void; // Callback for when a card is dropped on this card
-  gameEnded: boolean; // New prop: true if the game has ended (won or lost)
-  isHintDragged: boolean; // <-- Add this line
-  isHintTarget: boolean;   // <-- Add this line
-  isInvalidDragged: boolean;
-  isInvalidTarget: boolean;
+  id: string;
+  rank: string;
+  suit: 'hearts' | 'diamonds' | 'clubs' | 'spades' | 'H' | 'D' | 'C' | 'S';
+  onDropCard: (draggedId: string, targetId: string) => void;
+  gameEnded: boolean;
+  isHintDragged?: boolean;
+  isHintTarget?: boolean;
+  isInvalidDragged?: boolean;
+  isInvalidTarget?: boolean;
 }
 
-const Card: React.FC<CardProps> = ({
-    id,
-    rank,
-    suit,
-    onDropCard,
-    gameEnded,
-    isHintDragged,
-    isHintTarget,
-    isInvalidDragged,
-    isInvalidTarget
-}) => {
-  // Create refs for drag and drop
-  const dragRef = useRef<HTMLDivElement>(null);
-  const dropRef = useRef<HTMLDivElement>(null);
+// Base styles that don't change
+const baseStyles = {
+  width: '100px',
+  height: '140px',
+  margin: '5px',
+  display: 'flex',
+  flexDirection: 'column' as const,
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  padding: '8px',
+  fontSize: '24px',
+  fontWeight: 'bold',
+  position: 'relative' as const,
+};
 
-  // useDrag hook: Makes this component draggable
+// Animation classes
+const ANIMATION_CLASSES = {
+  hint: 'border-4 border-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.5)] animate-[pulse_1s_ease-in-out_infinite]',
+  target: 'border-4 border-lime-500 shadow-[0_0_15px_rgba(132,204,22,0.5)] animate-[pulse_1s_ease-in-out_infinite]',
+  invalid: 'border-4 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)] animate-[shake_0.5s_ease-in-out]',
+};
+
+const Card: React.FC<CardProps> = React.memo(({
+  id,
+  rank,
+  suit,
+  onDropCard,
+  gameEnded,
+  isHintDragged,
+  isHintTarget,
+  isInvalidDragged,
+  isInvalidTarget,
+}) => {
   const [{ isDragging }, drag] = useDrag(() => ({
     type: ItemTypes.CARD,
-    item: { id, rank, suit },
-    canDrag: !gameEnded,
+    item: { id },
     collect: (monitor) => ({
-      isDragging: monitor.isDragging(),
+      isDragging: !!monitor.isDragging(),
     }),
+    canDrag: !gameEnded,
   }));
 
-  // useDrop hook: Makes this component a valid drop target
-  const [{ isOver, canDrop }, drop] = useDrop(() => ({
+  const [{ isOver }, drop] = useDrop<{ id: string }, void, { isOver: boolean }>(() => ({
     accept: ItemTypes.CARD,
     drop: (item: { id: string }) => {
-      onDropCard(item.id, id);
+      if (item.id !== id) {
+        onDropCard(item.id, id);
+      }
     },
-    canDrop: () => true,
-    collect: (monitor) => ({
-      isOver: monitor.isOver(),
-      canDrop: monitor.canDrop(),
+    collect: (monitor: DropTargetMonitor<{ id: string }, void>) => ({
+      isOver: !!monitor.isOver(),
     }),
+    canDrop: () => !gameEnded,
   }));
 
-  // Combine the refs
-  drag(dragRef);
-  drop(dropRef);
+  // Memoize the suit symbol
+  const suitSymbol = useMemo(() => getSuitSymbol(suit), [suit]);
 
-  // Determine card color for styling
-  const textColor = (suit === 'H' || suit === 'D') ? 'text-red-600' : 'text-black';
+  // Memoize the card styles
+  const cardStyles = useMemo(() => ({
+    opacity: isDragging ? 0.5 : 1,
+    transform: isDragging ? 'scale(0.95)' : 'scale(1)',
+    transition: 'transform 0.2s ease, opacity 0.2s ease',
+  }), [isDragging]);
 
-  // Opacity for visual feedback when dragging
-  const opacity = isDragging ? 0.5 : 1;
+  // Memoize the card classes
+  const cardClasses = useMemo(() => {
+    const baseClasses = [
+      'sprite',
+      `${formatSuit(suit)}-${formatRank(rank)}`,
+      'rounded-lg',
+      'shadow-lg',
+      'cursor-grab',
+      'select-none',
+      'touch-manipulation',
+      'transition-all',
+      'duration-200',
+      'ease-in-out',
+    ];
 
-  // Border style for drop target feedback
-  let borderClass = '';
-  if (isOver && canDrop) {
-    borderClass = 'border-4 border-yellow-400'; // Highlight when hovering over a valid drop target
-  } else if (canDrop && !isDragging) {
-    // Optional: could add a subtle border for all potential drop targets
-    // borderClass = 'border-2 border-gray-300';
-  }
+    const stateClasses = [
+      isDragging && 'cursor-grabbing shadow-xl',
+      isOver && 'ring-2 ring-blue-500 ring-opacity-50',
+      gameEnded && 'cursor-not-allowed opacity-75',
+      isHintDragged && 'animate-pulse ring-2 ring-purple-500',
+      isHintTarget && 'animate-pulse ring-2 ring-green-500',
+      isInvalidDragged && 'animate-shake ring-2 ring-red-500',
+      isInvalidTarget && 'animate-shake ring-2 ring-red-500',
+    ].filter(Boolean);
+
+    return [...baseClasses, ...stateClasses].join(' ');
+  }, [rank, suit, isDragging, isOver, gameEnded, isHintDragged, isHintTarget, isInvalidDragged, isInvalidTarget]);
 
   return (
     <div
-      ref={dropRef}
-      style={{
-        width: '100px',
-        height: '140px',
-        opacity,
-        margin: '5px',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: '8px',
-        fontSize: '24px',
-        fontWeight: 'bold',
-        position: 'relative',
+      ref={(node) => {
+        drag(drop(node));
       }}
-      className={`
-        bg-white rounded-lg shadow-md flex flex-col items-center justify-center
-        text-2xl font-bold border-2
-        ${suit === 'Hearts' || suit === 'Diamonds' ? 'text-red-600' : 'text-gray-800'}
-        ${isDragging ? 'opacity-50 border-blue-400' : 'opacity-100'}
-        ${gameEnded ? 'cursor-not-allowed' : 'cursor-grab'}
-        ${canDrop && isOver ? 'border-green-500' : 'border-transparent'}
-        ${isHintDragged ? 'border-4 border-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.5)] animate-[pulse_1s_ease-in-out_infinite]' : ''}
-        ${isHintTarget ? 'border-4 border-lime-500 shadow-[0_0_15px_rgba(132,204,22,0.5)] animate-[pulse_1s_ease-in-out_infinite]' : ''}
-        ${isInvalidDragged ? 'border-4 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)] animate-[shake_0.5s_ease-in-out]' : ''}
-        ${isInvalidTarget ? 'border-4 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)] animate-[shake_0.5s_ease-in-out]' : ''}
-        transition-all duration-300
-      `}
+      style={cardStyles}
+      className={cardClasses}
+      data-rank={formatRank(rank)}
+      data-suit={suitSymbol}
     >
-      <div
-        ref={dragRef}
-        className={`absolute inset-0 flex flex-col justify-between items-center p-2 ${textColor}`}
-        style={{ cursor: gameEnded ? 'not-allowed' : (isDragging ? 'grabbing' : 'grab') }}
-      >
-        <div className="text-left w-full pl-1">{rank}</div>
-        <div className="text-center text-4xl">{getSuitSymbol(suit)}</div>
-        <div className="text-right w-full pr-1 rotate-180">{rank}</div>
-      </div>
+      <span className="center-suit">{suitSymbol}</span>
     </div>
   );
-};
+});
 
-// Helper function to get the Unicode symbol for a suit
-const getSuitSymbol = (suit: string): string => {
-  switch (suit) {
-    case 'H': return '♥'; // Hearts
-    case 'D': return '♦'; // Diamonds
-    case 'C': return '♣'; // Clubs
-    case 'S': return '♠'; // Spades
-    default: return '';
-  }
-};
+Card.displayName = 'Card';
 
 export default Card;

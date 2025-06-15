@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sprite Position Measurer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #1a1a1a;
+            color: white;
+            font-family: monospace;
+        }
+        .container {
+            position: relative;
+            display: inline-block;
+        }
+        #spritesheet {
+            display: block;
+            max-width: 100%;
+            height: auto;
+        }
+        #crosshair {
+            position: absolute;
+            pointer-events: none;
+            width: 1px;
+            height: 1px;
+            background: red;
+            transform: translate(-50%, -50%);
+        }
+        #crosshair::before,
+        #crosshair::after {
+            content: '';
+            position: absolute;
+            background: red;
+            width: 1px;
+            height: 20px;
+            left: 50%;
+            top: -10px;
+        }
+        #crosshair::after {
+            width: 20px;
+            height: 1px;
+            left: -10px;
+            top: 50%;
+        }
+        #position {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.8);
+            padding: 10px;
+            border-radius: 4px;
+            z-index: 1000;
+        }
+        #controls {
+            position: fixed;
+            top: 10px;
+            left: 200px;
+            background: rgba(0,0,0,0.8);
+            padding: 10px;
+            border-radius: 4px;
+            z-index: 1000;
+        }
+        #recorded {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.8);
+            padding: 10px;
+            border-radius: 4px;
+            max-height: 80vh;
+            overflow-y: auto;
+            width: 300px;
+            z-index: 1000;
+        }
+        .card-position {
+            margin: 5px 0;
+            padding: 5px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 2px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .card-position .remove {
+            color: #ff4444;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 2px;
+            background: rgba(255,255,255,0.1);
+        }
+        .card-position .remove:hover {
+            background: rgba(255,255,255,0.2);
+        }
+        button {
+            background: #444;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 5px;
+        }
+        button:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body>
+    <div id="position">Position: X: 0, Y: 0</div>
+    <div id="controls">
+        <button onclick="undoLastPosition()">Undo Last</button>
+        <button onclick="clearAllPositions()">Clear All</button>
+        <span id="currentCard">Current: ace-hearts</span>
+    </div>
+    <div id="recorded">
+        <h3>Recorded Positions</h3>
+        <div id="positions"></div>
+    </div>
+    <div class="container">
+        <img id="spritesheet" src="../assets/vintage_deck.png" alt="Card Spritesheet">
+        <div id="crosshair"></div>
+    </div>
+
+    <script>
+        const spritesheet = document.getElementById('spritesheet');
+        const crosshair = document.getElementById('crosshair');
+        const position = document.getElementById('position');
+        const positions = document.getElementById('positions');
+        const currentCardDisplay = document.getElementById('currentCard');
+        let currentCard = 1;
+        let recordedPositions = [];
+
+        const suits = ['hearts', 'diamonds', 'clubs', 'spades'];
+        const ranks = ['ace', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'jack', 'queen', 'king'];
+
+        function updateCurrentCardDisplay() {
+            const suitIndex = Math.floor((currentCard - 1) / 13);
+            const rankIndex = (currentCard - 1) % 13;
+            const suit = suits[suitIndex];
+            const rank = ranks[rankIndex];
+            currentCardDisplay.textContent = `Current: ${rank}-${suit}`;
+        }
+
+        function undoLastPosition() {
+            if (recordedPositions.length > 0) {
+                recordedPositions.pop();
+                positions.removeChild(positions.lastChild);
+                currentCard--;
+                updateCurrentCardDisplay();
+            }
+        }
+
+        function clearAllPositions() {
+            recordedPositions = [];
+            positions.innerHTML = '';
+            currentCard = 1;
+            updateCurrentCardDisplay();
+        }
+
+        spritesheet.addEventListener('mousemove', (e) => {
+            const rect = spritesheet.getBoundingClientRect();
+            const x = Math.round(e.clientX - rect.left);
+            const y = Math.round(e.clientY - rect.top);
+            position.textContent = `Position: X: ${x}, Y: ${y}`;
+            crosshair.style.left = e.clientX + 'px';
+            crosshair.style.top = e.clientY + 'px';
+        });
+
+        spritesheet.addEventListener('click', (e) => {
+            const rect = spritesheet.getBoundingClientRect();
+            const x = Math.round(e.clientX - rect.left);
+            const y = Math.round(e.clientY - rect.top);
+            
+            const suitIndex = Math.floor((currentCard - 1) / 13);
+            const rankIndex = (currentCard - 1) % 13;
+            const suit = suits[suitIndex];
+            const rank = ranks[rankIndex];
+            
+            const cardPosition = document.createElement('div');
+            cardPosition.className = 'card-position';
+            
+            const positionText = document.createElement('span');
+            positionText.textContent = `${rank}-${suit}: { x: ${x}, y: ${y} }`;
+            
+            const removeButton = document.createElement('span');
+            removeButton.className = 'remove';
+            removeButton.textContent = '×';
+            removeButton.onclick = () => {
+                cardPosition.remove();
+                const index = recordedPositions.findIndex(p => p.rank === rank && p.suit === suit);
+                if (index !== -1) {
+                    recordedPositions.splice(index, 1);
+                    currentCard--;
+                    updateCurrentCardDisplay();
+                }
+            };
+            
+            cardPosition.appendChild(positionText);
+            cardPosition.appendChild(removeButton);
+            positions.appendChild(cardPosition);
+            
+            recordedPositions.push({ rank, suit, x, y });
+            
+            // Copy to clipboard
+            const cssClass = `.card-sprite-${rank}-${suit} { background-position: -${x}px -${y}px; }`;
+            navigator.clipboard.writeText(cssClass);
+            
+            currentCard = currentCard > 51 ? 1 : currentCard + 1;
+            updateCurrentCardDisplay();
+        });
+
+        // Initial display
+        updateCurrentCardDisplay();
+    </script>
+</body>
+</html> 

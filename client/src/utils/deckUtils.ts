@@ -1,4 +1,3 @@
-// client/src/utils/deckUtils.ts
 import type { CardType } from '../types/card';
 
 /**
@@ -6,12 +5,11 @@ import type { CardType } from '../types/card';
  * @returns An array of CardType objects representing a full deck.
  */
 export const generateDeck = (): CardType[] => {
-    const suits = ['H', 'D', 'C', 'S'] as const; // Hearts, Diamonds, Clubs, Spades
+    const suits = ['H', 'D', 'C', 'S'] as const;
     const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
     const deck: CardType[] = [];
     for (const suit of suits) {
         for (const rank of ranks) {
-            // THIS LINE IS THE CRITICAL FIX: Ensure it's exactly like this.
             deck.push({ id: `${rank}${suit}`, rank, suit }); // Unique ID for React keys and D&D
         }
     }

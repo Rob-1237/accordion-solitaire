@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import Card from './Card'; // Import our new Card component
+import Card from './Card';
 
 // Helper function to create a standard 52-card deck
 const createDeck = () => {
-  const suits = ['H', 'D', 'C', 'S']; // Hearts, Diamonds, Clubs, Spades
+  const suits = ['H', 'D', 'C', 'S'];
   const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
   const deck = [];
   for (const suit of suits) {
@@ -27,10 +27,9 @@ const GameBoard: React.FC = () => {
   const [cards, setCards] = useState<Array<{ suit: 'H' | 'D' | 'C' | 'S'; rank: string }>>([]);
 
   useEffect(() => {
-    // Create and shuffle a new deck when the component mounts
     const newDeck = shuffleDeck(createDeck());
     setCards(newDeck);
-  }, []); // Empty dependency array ensures this runs only once on mount
+  }, []);
 
   return (
     <div className="flex flex-col items-center justify-center p-4 bg-gray-200 rounded-lg shadow-inner w-full max-w-6xl mx-auto min-h-[400px]">

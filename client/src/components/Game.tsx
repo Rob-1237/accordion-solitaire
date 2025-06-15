@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { auth } from '../firebase';
 import { signOut } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
+import { toast, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import Card from './Card';
 
 import { generateDeck, shuffleDeck } from '../utils/deckUtils';
@@ -11,374 +13,542 @@ import type { CardType, HintMove } from '../types/card';
 
 import { saveGame, loadGame } from '../services/firebaseService';
 
-const Game: React.FC = () => {
-    const navigate = useNavigate();
-    const [boardCards, setBoardCards] = useState<CardType[]>([]);
-    const [hasWon, setHasWon] = useState<boolean>(false);
-    const [hasLost, setHasLost] = useState<boolean>(false);
-    const [moveHistory, setMoveHistory] = useState<CardType[][]>([]);
-    const [hint, setHint] = useState<HintMove | null>(null);
-    const [showHint, setShowHint] = useState<boolean>(false);
-    const [invalidMoveCards, setInvalidMoveCards] = useState<{ draggedId: string | null, targetId: string | null }>({
-        draggedId: null,
-        targetId: null
-    });
-    const [currentUser, setCurrentUser] = useState<User | null>(null);
-    const [isLoadingGame, setIsLoadingGame] = useState<boolean>(true);
+// Custom hook for authentication
+const useAuth = () => {
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const navigate = useNavigate();
+  const hasShownWelcome = useRef(false);
+  const isMounted = useRef(false);
 
-    // Effect 1: Listen for authentication state changes (runs once on mount)
-    useEffect(() => {
-        const unsubscribe = auth.onAuthStateChanged(user => {
-            setCurrentUser(user); // Set the current user state
-        });
-
-        // Cleanup the subscription when the component unmounts
-        return () => unsubscribe();
-    }, []); // Empty dependency array means this runs once on mount
-
-    // Effect 2: Load game state or start a new game when currentUser changes
-    useEffect(() => {
-        const initializeOrLoadGame = async () => {
-            setIsLoadingGame(true); // Set loading state to true
-
-            if (currentUser) {
-                // User is logged in, attempt to load their saved game
-                try {
-                    const loadedData = await loadGame(currentUser.uid);
-                    console.log("Step 1: Loaded moveHistory from Firestore:", loadedData?.moveHistory); // ADD THIS
-        console.log("Step 2: Current local moveHistory BEFORE set:", moveHistory); // ADD THIS (Note: this is the state from previous render cycle)
-       
-                    if (loadedData) {
-                        // If a game was loaded, populate the component's state
-                        setBoardCards(loadedData.boardCards);
-                        setHasWon(loadedData.hasWon);
-                        setHasLost(loadedData.hasLost);
-                        setMoveHistory(loadedData.moveHistory || []); // Ensure history is an array
-                        console.log("Game loaded successfully from Firestore for user:", currentUser.uid);
-                    } else {
-                        // No saved game found, start a brand new game for this user
-                        console.log("No saved game found, starting a new game for user:", currentUser.uid);
-                        const initialDeck = generateDeck();
-                        const shuffled = shuffleDeck(initialDeck);
-                        setBoardCards(shuffled);
-                        setHasWon(false);
-                        setHasLost(false);
-                        setMoveHistory([]);
-                        // Automatically save this initial new game state to Firestore
-                        await saveGame(currentUser.uid, { boardCards: shuffled, hasWon: false, hasLost: false, moveHistory: [] });
-                    }
-                } catch (error) {
-                    console.error("Error loading or saving initial game:", error);
-                    // Fallback: If loading/saving fails, still start a new game to allow play
-                    const initialDeck = generateDeck();
-                    const shuffled = shuffleDeck(initialDeck);
-                    setBoardCards(shuffled);
-                    setHasWon(false);
-                    setHasLost(false);
-                    setMoveHistory([]);
-                }
-            } else {
-                // No user logged in (e.g., initial visit or after logout).
-                // Start a new game, but it won't be associated with a user for saving.
-                console.log("No user logged in, starting a new game (not savable).");
-                const initialDeck = generateDeck();
-                const shuffled = shuffleDeck(initialDeck);
-                setBoardCards(shuffled);
-                setHasWon(false);
-                setHasLost(false);
-                setMoveHistory([]);
-            }
-            setIsLoadingGame(false); // End loading state
-        };
-
-        // This ensures the game initialization/loading logic runs only after `currentUser`
-        // has been set by the `onAuthStateChanged` listener.
-        if (currentUser !== undefined) { // Check if currentUser state has been definitively set (null or User object)
-            initializeOrLoadGame();
-        }
-    }, [currentUser]); // This effect re-runs whenever `currentUser` changes.
-
-    // This useEffect will recalculate the hint whenever the board, win, or loss state changes.
-    // This is what populates the 'hint' state.
-    useEffect(() => {
-        if (hasWon || hasLost) {
-            setHint(null); // Clear hint if game is over
-        } else {
-            setHint(findHintMove(boardCards)); // This calls your findHintMove function
-        }
-    }, [boardCards, hasWon, hasLost]); // Dependencies: recalculate when these states change
-
-    // Add useEffect to clear invalid move feedback after 1500ms
-    useEffect(() => {
-        if (invalidMoveCards.draggedId || invalidMoveCards.targetId) {
-            const timer = setTimeout(() => {
-                setInvalidMoveCards({ draggedId: null, targetId: null });
-            }, 1500);
-            return () => clearTimeout(timer);
-        }
-    }, [invalidMoveCards]);
-
-    // Add useEffect to clear hint after 3000ms
-    useEffect(() => {
-        if (showHint) {
-            const timer = setTimeout(() => {
-                setShowHint(false);
-            }, 3000);
-            return () => clearTimeout(timer);
-        }
-    }, [showHint]);
-
-    const handleLogout = async () => {
-        try {
-            await signOut(auth);
-            navigate('/login');
-        } catch (error) {
-            console.error('Error logging out:', error);
-        }
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
     };
+  }, []);
 
-    const handleRestart = () => {
-        const newDeck = shuffleDeck(generateDeck());
-        setBoardCards(newDeck);
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged(user => {
+      setCurrentUser(user);
+      // Only show welcome message if component is mounted and we haven't shown it yet
+      if (user && isMounted.current && !hasShownWelcome.current) {
+        hasShownWelcome.current = true;
+        // Use setTimeout to ensure this happens after the current render cycle
+        setTimeout(() => {
+          if (isMounted.current) {
+            toast.success(`Welcome back, ${user.email}!`, {
+              position: "top-right",
+              autoClose: 5000,
+              hideProgressBar: false,
+              closeOnClick: true,
+              pauseOnHover: true,
+              draggable: true,
+            });
+          }
+        }, 100);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleLogout = useCallback(async () => {
+    try {
+      await signOut(auth);
+      if (isMounted.current) {
+        toast.info('Logged out successfully', {
+          position: "top-right",
+          autoClose: 3000,
+        });
+      }
+      navigate('/login');
+    } catch (error) {
+      console.error('Error logging out:', error);
+      if (isMounted.current) {
+        toast.error('Failed to log out. Please try again.');
+      }
+    }
+  }, [navigate]);
+
+  return { currentUser, handleLogout };
+};
+
+// Custom hook for game state management
+const useGameState = (currentUser: User | null) => {
+  const [boardCards, setBoardCards] = useState<CardType[]>([]);
+  const [hasWon, setHasWon] = useState<boolean>(false);
+  const [hasLost, setHasLost] = useState<boolean>(false);
+  const [moveHistory, setMoveHistory] = useState<CardType[][]>([]);
+  const [isLoadingGame, setIsLoadingGame] = useState<boolean>(true);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const isMounted = useRef(false);
+  const loadingToastId = useRef<string | number | null>(null);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      // Clear any pending toasts on unmount
+      if (loadingToastId.current) {
+        toast.dismiss(loadingToastId.current);
+      }
+    };
+  }, []);
+
+  // Memoize game state
+  const gameState = useMemo(() => ({
+    boardCards,
+    hasWon,
+    hasLost,
+    moveHistory,
+  }), [boardCards, hasWon, hasLost, moveHistory]);
+
+  // Initialize or load game
+  useEffect(() => {
+    const initializeOrLoadGame = async () => {
+      if (!isMounted.current) return;
+      
+      setIsLoadingGame(true);
+      try {
+        if (currentUser) {
+          loadingToastId.current = toast.loading('Loading your game...', {
+            position: "top-right",
+          });
+          
+          const loadedData = await loadGame(currentUser.uid);
+          if (!isMounted.current) return;
+
+          if (loadedData) {
+            setBoardCards(loadedData.boardCards);
+            setHasWon(loadedData.hasWon);
+            setHasLost(loadedData.hasLost);
+            setMoveHistory(loadedData.moveHistory);
+            toast.update(loadingToastId.current, { 
+              render: 'Game loaded successfully!', 
+              type: 'success', 
+              isLoading: false,
+              autoClose: 3000
+            });
+          } else {
+            const shuffled = shuffleDeck(generateDeck());
+            setBoardCards(shuffled);
+            setHasWon(false);
+            setHasLost(false);
+            setMoveHistory([]);
+            setIsSaving(true);
+            await saveGame(currentUser.uid, { 
+              boardCards: shuffled, 
+              hasWon: false, 
+              hasLost: false, 
+              moveHistory: [] 
+            });
+            if (!isMounted.current) return;
+            setIsSaving(false);
+            toast.update(loadingToastId.current, { 
+              render: 'New game started!', 
+              type: 'success', 
+              isLoading: false,
+              autoClose: 3000
+            });
+          }
+        } else {
+          const shuffled = shuffleDeck(generateDeck());
+          setBoardCards(shuffled);
+          setHasWon(false);
+          setHasLost(false);
+          setMoveHistory([]);
+        }
+      } catch (error) {
+        console.error("Error loading or saving initial game:", error);
+        if (isMounted.current) {
+          toast.error('Failed to load game. Starting a new game instead.');
+        }
+        const shuffled = shuffleDeck(generateDeck());
+        setBoardCards(shuffled);
         setHasWon(false);
         setHasLost(false);
         setMoveHistory([]);
-        setShowHint(false);
-
-        if (currentUser) {
-            // Save the new, restarted game state
-            saveGame(currentUser.uid, { boardCards: newDeck, hasWon: false, hasLost: false, moveHistory: [] });
-        }
+      }
+      if (isMounted.current) {
+        setIsLoadingGame(false);
+      }
     };
 
-    const handleUndo = () => {
-        console.log("Step 3: moveHistory at start of handleUndo:", moveHistory); // ADD THIS
-
-        if (moveHistory.length > 0) {
-            const previousBoard = moveHistory[moveHistory.length - 1];
-            const updatedMoveHistory = moveHistory.slice(0, moveHistory.length - 1); // Get history AFTER undo
-
-            setBoardCards(previousBoard);
-            setMoveHistory(updatedMoveHistory); // Update state with sliced history
-            setHasWon(false);
-            setHasLost(false);
-            setShowHint(false);
-
-            if (currentUser) {
-                // Save the state after undoing the move
-                saveGame(currentUser.uid, { boardCards: previousBoard, hasWon: false, hasLost: false, moveHistory: updatedMoveHistory });
-            }
-        }
-    };
-
-    const handleCardDrop = (draggedCardId: string, targetCardId: string) => {
-        setBoardCards(prevCards => {
-            // 1. Find indices of the dragged and target cards
-            const draggedIndex = prevCards.findIndex(card => card.id === draggedCardId);
-            const targetIndex = prevCards.findIndex(card => card.id === targetCardId);
-
-            // 2. Basic validation: If cards not found or dropping on self, return
-            if (draggedIndex === -1 || targetIndex === -1 || draggedIndex === targetIndex) {
-                console.warn("Invalid drop: Card not found, or dropping on self.");
-                setInvalidMoveCards({ draggedId: draggedCardId, targetId: targetCardId });
-                return prevCards;
-            }
-
-            // 3. Get the actual card objects
-            const draggedCard = prevCards[draggedIndex];
-            const targetCard = prevCards[targetIndex];
-
-            // 4. Validate the move based on game rules (suit/rank and position)
-            if (!isValidMove(draggedCard, targetCard, draggedIndex, targetIndex)) {
-                console.log(`Invalid move from ${draggedCard.id} to ${targetCard.id}`);
-                setInvalidMoveCards({ draggedId: draggedCardId, targetId: targetCardId });
-                return prevCards;
-            }
-
-            // Clear any invalid move feedback when a valid move is made
-            setInvalidMoveCards({ draggedId: null, targetId: null });
-
-            // --- START OF NEW/MODIFIED CODE FOR SAVE/LOAD INTEGRATION ---
-
-            // NEW LINE: Capture the current board state *before* it's modified.
-            // This is crucial because it's the state we add to move history for 'Undo'.
-            const currentBoardForHistory = [...prevCards];
-
-
-            // Perform the actual card manipulation to create the new board state
-            const newCards = [...prevCards];
-            // Remove the dragged card from its original position
-            const [cardToMove] = newCards.splice(draggedIndex, 1);
-
-            // Calculate the effective target index after splicing (to account for shifted indices).
-            const effectiveTargetIndex = (draggedIndex < targetIndex) ? targetIndex - 1 : targetIndex;
-
-            // Place the dragged card at the target's position
-            newCards.splice(effectiveTargetIndex, 1, cardToMove);
-
-
-            // Determine hasWon and hasLost conditions for the *new* state, after the move.
-            const newHasWon = newCards.length === 1;
-            const newHasLost = newHasWon ? false : hasNoMoreMoves(newCards);
-
-            // Update local state for win/loss, hint, etc.
-            setHasWon(newHasWon);
-            setHasLost(newHasLost);
-            setShowHint(false);
-
-
-            // NEW/MODIFIED BLOCK: This entire if/else block is new/modified logic.
-            // It handles updating move history AND saving the game based on user login status.
-            if (currentUser) {
-                // NEW LINE: Create the UP-TO-DATE move history array.
-                // It includes all previous history AND the board state *before* this move.
-                const updatedMoveHistoryAfterDrop = [...moveHistory, currentBoardForHistory];
-
-                // NEW LINE: Update the local React state for moveHistory.
-                setMoveHistory(updatedMoveHistoryAfterDrop);
-
-                // NEW LINE: Call saveGame!
-                // We pass the current user's ID, and the complete, current game state data.
-                // This includes the new board, the new win/loss status, and the updated move history.
-                saveGame(currentUser.uid, {
-                    boardCards: newCards,          // The board AFTER the move
-                    hasWon: newHasWon,             // The win status AFTER the move
-                    hasLost: newHasLost,           // The loss status AFTER the move
-                    moveHistory: updatedMoveHistoryAfterDrop, // The move history INCLUDING the state just before this move
-                });
-            } else {
-                // This block is for anonymous users (not logged in).
-                // They don't save, but their local move history should still be updated.
-                // This line replaces or confirms your previous setMoveHistory for non-logged-in users.
-                setMoveHistory(prevHistory => [...prevHistory, currentBoardForHistory]);
-            }
-            // --- END OF NEW/MODIFIED CODE FOR SAVE/LOAD INTEGRATION ---
-
-            return newCards; // Return the new board state for setBoardCards
-        });
-    };
-
-
-    if (isLoadingGame) {
-        return (
-            <div className="min-h-screen bg-green-700 p-4 flex items-center justify-center text-white text-3xl font-bold">
-                Loading game...
-            </div>
-        );
+    if (currentUser !== undefined) {
+      initializeOrLoadGame();
     }
+  }, [currentUser]);
 
-    return (
-        <div className="min-h-screen bg-green-700 p-4">
-            {/* You Win! Overlay */}
-            {hasWon && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-75 z-50">
-                    <div className="bg-yellow-300 text-green-900 p-8 rounded-lg shadow-xl text-center">
-                        <h2 className="text-4xl font-bold mb-4">🎉 Congratulations! You Win! 🎉</h2>
-                        <p className="text-lg mb-4">You've successfully consolidated all cards!</p>
-                        <button
-                            onClick={handleRestart}
-                            className="bg-green-600 hover:bg-green-800 text-white font-bold py-3 px-6 rounded-lg text-xl"
-                        >
-                            Play Again!
-                        </button>
-                    </div>
-                </div>
-            )}
+  const saveGameState = useCallback(async (state: typeof gameState) => {
+    if (!currentUser || !isMounted.current) return;
+    
+    setIsSaving(true);
+    const toastId = toast.loading('Saving game...', {
+      position: "top-right",
+    });
+    try {
+      await saveGame(currentUser.uid, state);
+      if (isMounted.current) {
+        toast.update(toastId, { 
+          render: 'Game saved!', 
+          type: 'success', 
+          isLoading: false,
+          autoClose: 3000
+        });
+      }
+    } catch (error) {
+      console.error('Error saving game:', error);
+      if (isMounted.current) {
+        toast.update(toastId, { 
+          render: 'Failed to save game. Your progress may not be saved.', 
+          type: 'error', 
+          isLoading: false,
+          autoClose: 5000
+        });
+      }
+    } finally {
+      if (isMounted.current) {
+        setIsSaving(false);
+      }
+    }
+  }, [currentUser]);
 
-            {/* Game Over! Overlay */}
-            {(hasLost && !hasWon) && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-75 z-50">
-                    <div className="bg-red-300 text-red-900 p-8 rounded-lg shadow-xl text-center">
-                        <h2 className="text-4xl font-bold mb-4">Game Over! 😥</h2>
-                        <p className="text-lg mb-4">No more valid moves left.</p>
-                        <button
-                            onClick={handleRestart}
-                            className="bg-blue-600 hover:bg-blue-800 text-white font-bold py-3 px-6 rounded-lg text-xl"
-                        >
-                            Try Again!
-                        </button>
-                    </div>
-                </div>
-            )}
+  const handleRestart = useCallback(() => {
+    const newDeck = shuffleDeck(generateDeck());
+    setBoardCards(newDeck);
+    setHasWon(false);
+    setHasLost(false);
+    setMoveHistory([]);
 
-            {/* Header with Game Title and Action Buttons */}
-            <div className="flex justify-between items-center mb-4">
-                <h1 className="text-3xl font-bold text-white">Accordion Solitaire</h1>
-                <div>
-                    {/* NEW: Hint Button - Added here */}
-                    <button
-                        onClick={() => setShowHint(prev => !prev)}
-                        disabled={hint === null || hasWon || hasLost}
-                        className={`font-bold py-2 px-4 rounded mr-2 ${hint === null || hasWon || hasLost
-                            ? 'bg-gray-500 text-gray-300 cursor-not-allowed'
-                            : showHint
-                                ? 'bg-purple-700 text-white' // Active state when hint is showing
-                                : 'bg-purple-500 hover:bg-purple-700 text-white'
-                            }`}
-                    >
-                        {showHint ? 'Hint Active' : 'Hint'}
-                    </button>
+    if (currentUser) {
+      saveGameState({ 
+        boardCards: newDeck, 
+        hasWon: false, 
+        hasLost: false, 
+        moveHistory: [] 
+      });
+    }
+  }, [currentUser, saveGameState]);
 
-                    {/* Existing Undo Button */}
-                    <button
-                        onClick={handleUndo}
-                        // Button is disabled if no moves have been made, or if the game is over (won/lost)
-                        disabled={moveHistory.length === 0 || hasWon || hasLost}
-                        className={`font-bold py-2 px-4 rounded mr-2 ${moveHistory.length === 0 || hasWon || hasLost
-                            ? 'bg-gray-500 text-gray-300 cursor-not-allowed' // Disabled style
-                            : 'bg-yellow-500 hover:bg-yellow-700 text-white' // Enabled style
-                            }`}
-                    >
-                        Undo
-                    </button>
+  const handleUndo = useCallback(() => {
+    if (moveHistory.length > 0) {
+      const previousBoard = moveHistory[moveHistory.length - 1];
+      const updatedMoveHistory = moveHistory.slice(0, moveHistory.length - 1);
 
-                    {/* Existing Restart Button */}
-                    <button
-                        onClick={handleRestart}
-                        className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mr-2"
-                    >
-                        Restart Game
-                    </button>
+      setBoardCards(previousBoard);
+      setMoveHistory(updatedMoveHistory);
+      setHasWon(false);
+      setHasLost(false);
 
-                    {/* CONDITIONAL LOGOUT BUTTON */}
-                    {currentUser ? ( // Only render if currentUser exists (i.e., user is logged in)
-                        <button
-                            onClick={handleLogout}
-                            className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
-                        >
-                            Logout
-                        </button>
-                    ) : ( // If no currentUser, offer a "Login" or "Save Game" option
-                        <button
-                            onClick={() => navigate('/login')} // Navigate to the login page
-                            className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded"
-                        >
-                            Login / Save Game
-                        </button>
-                    )}
+      if (currentUser) {
+        saveGameState({ 
+          boardCards: previousBoard, 
+          hasWon: false, 
+          hasLost: false, 
+          moveHistory: updatedMoveHistory 
+        });
+      } else {
+        setMoveHistory(prevHistory => [...prevHistory, previousBoard]);
+      }
+    }
+  }, [moveHistory, currentUser, saveGameState]);
 
-                </div>
-            </div>
+  const handleCardDrop = useCallback((draggedCardId: string, targetCardId: string) => {
+    setBoardCards(prevCards => {
+      const draggedIndex = prevCards.findIndex(card => card.id === draggedCardId);
+      const targetIndex = prevCards.findIndex(card => card.id === targetCardId);
 
-            {/* Card Display Area */}
-            <div className="flex flex-wrap gap-2 justify-center">
-                {boardCards.map(card => (
-                    <Card
-                        key={card.id}
-                        id={card.id}
-                        rank={card.rank}
-                        suit={card.suit}
-                        onDropCard={handleCardDrop}
-                        gameEnded={hasWon || hasLost}
-                        isHintDragged={showHint && hint?.draggedCardId === card.id}
-                        isHintTarget={showHint && hint?.targetCardId === card.id}
-                        isInvalidDragged={invalidMoveCards.draggedId === card.id}
-                        isInvalidTarget={invalidMoveCards.targetId === card.id}
-                    />
-                ))}
-            </div>
-        </div>
-    );
+      if (draggedIndex === -1 || targetIndex === -1 || draggedIndex === targetIndex) {
+        toast.error('Invalid move: Cannot drop card on itself');
+        return prevCards;
+      }
+
+      const draggedCard = prevCards[draggedIndex];
+      const targetCard = prevCards[targetIndex];
+
+      if (!isValidMove(draggedCard, targetCard, draggedIndex, targetIndex)) {
+        toast.error('Invalid move: Cards must match in suit or rank');
+        return prevCards;
+      }
+
+      const currentBoardForHistory = [...prevCards];
+      const newCards = [...prevCards];
+      const [cardToMove] = newCards.splice(draggedIndex, 1);
+      const effectiveTargetIndex = (draggedIndex < targetIndex) ? targetIndex - 1 : targetIndex;
+      newCards.splice(effectiveTargetIndex, 1, cardToMove);
+
+      const newHasWon = newCards.length === 1;
+      const newHasLost = newHasWon ? false : hasNoMoreMoves(newCards);
+
+      setHasWon(newHasWon);
+      setHasLost(newHasLost);
+
+      if (currentUser) {
+        const updatedMoveHistoryAfterDrop = [...moveHistory, currentBoardForHistory];
+        setMoveHistory(updatedMoveHistoryAfterDrop);
+        saveGameState({
+          boardCards: newCards,
+          hasWon: newHasWon,
+          hasLost: newHasLost,
+          moveHistory: updatedMoveHistoryAfterDrop,
+        });
+      } else {
+        setMoveHistory(prevHistory => [...prevHistory, currentBoardForHistory]);
+      }
+
+      return newCards;
+    });
+  }, [currentUser, moveHistory, saveGameState]);
+
+  return {
+    gameState,
+    isLoadingGame,
+    isSaving,
+    handleRestart,
+    handleUndo,
+    handleCardDrop,
+  };
 };
 
-export default Game;
+// Custom hook for hint management
+const useHint = (boardCards: CardType[], hasWon: boolean, hasLost: boolean) => {
+  const [hint, setHint] = useState<HintMove | null>(null);
+  const [showHint, setShowHint] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (hasWon || hasLost) {
+      setHint(null);
+    } else {
+      setHint(findHintMove(boardCards));
+    }
+  }, [boardCards, hasWon, hasLost]);
+
+  useEffect(() => {
+    if (showHint) {
+      const timer = setTimeout(() => setShowHint(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [showHint]);
+
+  return { hint, showHint, setShowHint };
+};
+
+// Sub-component for game controls
+const GameControls = React.memo(({ 
+  onRestart, 
+  onUndo, 
+  onHint, 
+  hint, 
+  hasWon, 
+  hasLost, 
+  moveHistory, 
+  showHint,
+  isSaving
+}: {
+  onRestart: () => void;
+  onUndo: () => void;
+  onHint: () => void;
+  hint: HintMove | null;
+  hasWon: boolean;
+  hasLost: boolean;
+  moveHistory: CardType[][];
+  showHint: boolean;
+  isSaving: boolean;
+}) => (
+  <div className="flex flex-col xs:flex-row gap-2xs md:gap-xs items-center">
+    <button
+      onClick={onHint}
+      disabled={hint === null || hasWon || hasLost}
+      className={`min-h-touch-min px-touch-md py-2xs rounded-md font-bold transition-colors duration-200 ${
+        hint === null || hasWon || hasLost
+          ? 'bg-gray-500 text-gray-300 cursor-not-allowed'
+          : showHint
+            ? 'bg-purple-700 text-white'
+            : 'bg-purple-500 hover:bg-purple-700 text-white'
+      }`}
+    >
+      <span className="text-responsive-sm md:text-responsive-base">
+        {showHint ? 'Hint Active' : 'Hint'}
+      </span>
+    </button>
+
+    <button
+      onClick={onUndo}
+      disabled={moveHistory.length === 0 || hasWon || hasLost}
+      className={`min-h-touch-min px-touch-md py-2xs rounded-md font-bold transition-colors duration-200 ${
+        moveHistory.length === 0 || hasWon || hasLost
+          ? 'bg-gray-500 text-gray-300 cursor-not-allowed'
+          : 'bg-yellow-500 hover:bg-yellow-700 text-white'
+      }`}
+    >
+      <span className="text-responsive-sm md:text-responsive-base">Undo</span>
+    </button>
+
+    <button
+      onClick={onRestart}
+      className="min-h-touch-min px-touch-md py-2xs rounded-md font-bold bg-blue-500 hover:bg-blue-700 text-white transition-colors duration-200"
+    >
+      <span className="text-responsive-sm md:text-responsive-base">Restart Game</span>
+    </button>
+  </div>
+));
+
+GameControls.displayName = 'GameControls';
+
+// Sub-component for game overlays
+const GameOverlay = React.memo(({ 
+  hasWon, 
+  hasLost, 
+  onRestart 
+}: { 
+  hasWon: boolean; 
+  hasLost: boolean; 
+  onRestart: () => void; 
+}) => {
+  if (!hasWon && !hasLost) return null;
+
+  return (
+    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-75 z-overlay animate-responsive-fade">
+      <div className={`${
+        hasWon ? 'bg-yellow-300 text-green-900' : 'bg-red-300 text-red-900'
+      } p-4xs md:p-2xs lg:p-xs rounded-lg shadow-xl text-center max-w-[90vw] md:max-w-[80vw] lg:max-w-[600px] animate-responsive-scale`}>
+        <h2 className="text-responsive-xl md:text-responsive-2xl font-bold mb-2xs md:mb-xs">
+          {hasWon ? '🎉 Congratulations! You Win! 🎉' : 'Game Over! 😥'}
+        </h2>
+        <p className="text-responsive-base md:text-responsive-lg mb-2xs md:mb-xs">
+          {hasWon ? "You've successfully consolidated all cards!" : 'No more valid moves left.'}
+        </p>
+        <button
+          onClick={onRestart}
+          className={`min-h-touch-md px-touch-lg py-2xs md:py-xs rounded-lg font-bold text-responsive-base md:text-responsive-lg transition-colors duration-200 ${
+            hasWon 
+              ? 'bg-green-600 hover:bg-green-800' 
+              : 'bg-blue-600 hover:bg-blue-800'
+          } text-white`}
+        >
+          {hasWon ? 'Play Again!' : 'Try Again!'}
+        </button>
+      </div>
+    </div>
+  );
+});
+
+GameOverlay.displayName = 'GameOverlay';
+
+// Main Game component
+const Game: React.FC = () => {
+  const navigate = useNavigate();
+  const { currentUser, handleLogout } = useAuth();
+  const { 
+    gameState: { boardCards, hasWon, hasLost, moveHistory },
+    isLoadingGame,
+    isSaving,
+    handleRestart,
+    handleUndo,
+    handleCardDrop,
+  } = useGameState(currentUser);
+  const { hint, showHint, setShowHint } = useHint(boardCards, hasWon, hasLost);
+  const [invalidMoveCards, setInvalidMoveCards] = useState<{ draggedId: string | null, targetId: string | null }>({
+    draggedId: null,
+    targetId: null
+  });
+
+  useEffect(() => {
+    if (invalidMoveCards.draggedId || invalidMoveCards.targetId) {
+      const timer = setTimeout(() => {
+        setInvalidMoveCards({ draggedId: null, targetId: null });
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [invalidMoveCards]);
+
+  // Memoize the card rendering
+  const renderedCards = useMemo(() => (
+    boardCards.map(card => (
+      <Card
+        key={card.id}
+        id={card.id}
+        rank={card.rank}
+        suit={card.suit}
+        onDropCard={handleCardDrop}
+        gameEnded={hasWon || hasLost}
+        isHintDragged={showHint && hint?.draggedCardId === card.id}
+        isHintTarget={showHint && hint?.targetCardId === card.id}
+        isInvalidDragged={invalidMoveCards.draggedId === card.id}
+        isInvalidTarget={invalidMoveCards.targetId === card.id}
+      />
+    ))
+  ), [boardCards, handleCardDrop, hasWon, hasLost, showHint, hint, invalidMoveCards]);
+
+  if (isLoadingGame) {
+    return (
+      <div className="min-h-screen bg-green-700 p-2xs md:p-xs flex items-center justify-center">
+        <div className="flex flex-col items-center gap-2xs md:gap-xs animate-responsive-fade">
+          <div className="w-3xl h-3xl border-4 border-white border-t-transparent rounded-full animate-spin" />
+          <span className="text-responsive-lg md:text-responsive-xl font-bold text-white">
+            Loading game...
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-green-700 p-2xs md:p-xs lg:p-sm">
+      <GameOverlay hasWon={hasWon} hasLost={hasLost} onRestart={handleRestart} />
+
+      <div className="container mx-auto">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2xs md:gap-xs mb-2xs md:mb-xs">
+          <div className="flex flex-col xs:flex-row items-start xs:items-center gap-2xs">
+            <h1 className="text-responsive-xl md:text-responsive-2xl font-bold text-white">
+              Accordion Solitaire
+            </h1>
+            {currentUser && (
+              <div className="flex items-center gap-2xs text-white">
+                <div className="w-2xs h-2xs bg-green-400 rounded-full animate-pulse" />
+                <span className="text-responsive-sm md:text-responsive-base">
+                  Logged in as {currentUser.email}
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-col xs:flex-row items-stretch xs:items-center gap-2xs w-full xs:w-auto">
+            <GameControls
+              onRestart={handleRestart}
+              onUndo={handleUndo}
+              onHint={() => setShowHint(prev => !prev)}
+              hint={hint}
+              hasWon={hasWon}
+              hasLost={hasLost}
+              moveHistory={moveHistory}
+              showHint={showHint}
+              isSaving={isSaving}
+            />
+
+            {currentUser ? (
+              <button
+                onClick={handleLogout}
+                className="min-h-touch-min px-touch-md py-2xs rounded-md font-bold bg-red-500 hover:bg-red-700 text-white transition-colors duration-200 text-responsive-sm md:text-responsive-base"
+              >
+                Logout
+              </button>
+            ) : (
+              <button
+                onClick={() => navigate('/login')}
+                className="min-h-touch-min px-touch-md py-2xs rounded-md font-bold bg-green-500 hover:bg-green-700 text-white transition-colors duration-200 text-responsive-sm md:text-responsive-base"
+              >
+                Login / Save Game
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2xs md:gap-xs justify-center">
+          {renderedCards}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default React.memo(Game);

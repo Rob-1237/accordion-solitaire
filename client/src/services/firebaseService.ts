@@ -1,5 +1,3 @@
-// client/src/services/firebaseService.ts
-
 import { db } from '../firebase';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import type { CardType } from '../types/card';
@@ -9,8 +7,16 @@ export type SavedGameData = {
     boardCards: CardType[];
     hasWon: boolean;
     hasLost: boolean;
-    moveHistory: String;
+    moveHistory: string;
     lastSaved: Date; // Timestamp when the game was last saved
+}
+
+// Add a type for the game state that's used in the application
+export type GameState = {
+    boardCards: CardType[];
+    hasWon: boolean;
+    hasLost: boolean;
+    moveHistory: CardType[][];
 }
 
 // A fixed document ID for the current game for a user.
@@ -21,7 +27,7 @@ const GAME_DOC_ID = "currentGame";
  * @param userId The unique ID of the current authenticated user.
  * @param gameState An object containing the current board state, win/loss status, and move history.
  */
-export const saveGame = async (userId: string, gameState: Omit<SavedGameData, 'lastSaved'>): Promise<void> => {
+export const saveGame = async (userId: string, gameState: GameState): Promise<void> => {
   if (!userId) {
     console.error("Error saving game: No user ID provided. User must be authenticated.");
     return;
@@ -52,7 +58,7 @@ export const saveGame = async (userId: string, gameState: Omit<SavedGameData, 'l
  * @param userId The unique ID of the current authenticated user.
  * @returns A Promise that resolves to the SavedGameData object if found, otherwise null.
  */
-export const loadGame = async (userId: string): Promise<SavedGameData | null> => {
+export const loadGame = async (userId: string): Promise<GameState | null> => {
   if (!userId) {
     console.error("Error loading game: No user ID provided. User must be authenticated.");
     return null;
@@ -71,10 +77,10 @@ export const loadGame = async (userId: string): Promise<SavedGameData | null> =>
         boardCards: data.boardCards,
         hasWon: data.hasWon,
         hasLost: data.hasLost,
-        moveHistory: JSON.parse(data.moveHistory as string), // <-- CHANGED: Parse the string back to array
-        lastSaved: data.lastSaved.toDate(), // Firestore Timestamps need .toDate()
-      } as SavedGameData; // Cast to ensure type compatibility
-      } else {
+        moveHistory: JSON.parse(data.moveHistory),
+        lastSaved: data.lastSaved instanceof Date ? data.lastSaved : new Date(data.lastSaved),
+      } as GameState;
+    } else {
       // Document does not exist (no saved game)
       console.log("No saved game found for this user.");
       return null;

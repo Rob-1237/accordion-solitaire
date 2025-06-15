@@ -41,7 +41,7 @@ const Auth: React.FC = () => {
     }
   };
 
-  // NEW FUNCTION: Handle playing anonymously
+  // Handle playing anonymously
   const handlePlayAnonymously = () => {
     navigate('/'); // Navigate to the game page without logging in
   };
@@ -96,7 +96,7 @@ const Auth: React.FC = () => {
           {isRegistering ? 'Already have an account? Login' : 'Need an account? Register'}
         </button>
 
-        {/* NEW BUTTON: Play Anonymously */}
+        {/* Play Anonymously */}
         <div className="flex items-center justify-between mt-4">
             <button
                 onClick={handlePlayAnonymously}

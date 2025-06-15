@@ -1,4 +1,3 @@
-// client/src/utils/gameLogic.ts
 import type { CardType, HintMove } from '../types/card';
 
 /**
