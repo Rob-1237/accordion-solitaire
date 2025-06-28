@@ -92,6 +92,10 @@ const Card: React.FC<CardProps> = React.memo(({
     isInvalidDragged,
     isInvalidTarget,
 }) => {
+    // Debug touch events
+    const handleTouchStart = () => {
+        console.log('Touch started on card:', id);
+    };
     const [{ isDragging }, drag] = useDrag(() => ({
         type: ItemTypes.CARD,
         item: { id },
@@ -170,6 +174,7 @@ const Card: React.FC<CardProps> = React.memo(({
             className={cardClasses}
             data-rank={formatRank(rank)}
             data-suit={suitSymbol}
+            onTouchStart={handleTouchStart}
         >
             <span className="center-suit">{suitSymbol}</span>
         </div>

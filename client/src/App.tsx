@@ -3,7 +3,6 @@ import { useState, useEffect, createContext } from 'react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { TouchBackend } from 'react-dnd-touch-backend';
-import { MultiBackend } from 'react-dnd-multi-backend';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -16,31 +15,25 @@ import OnloadOverlay from './components/OnloadOverlay';
 // Overlay context to allow children to trigger the overlay
 export const OverlayContext = createContext<{ setShowOverlay: (show: boolean) => void }>({ setShowOverlay: () => { } });
 
-// Multi-backend configuration for desktop and mobile
-const backendOptions = {
-    backends: [
-        {
-            id: 'html5',
-            backend: HTML5Backend,
-            transition: {
-                dragSourceNotGrabbed: true,
-            },
-            preview: true,
-        },
-        {
-            id: 'touch',
-            backend: TouchBackend,
-            options: {
-                enableMouseEvents: true,
-                delay: 200,
-                delayTouchStart: 200,
-            },
-            preview: true,
-            transition: {
-                touchstart: (monitor: any) => !monitor.isDragging(),
-            },
-        },
-    ],
+// Detect if device supports touch
+const isTouchDevice = () => {
+    return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+};
+
+// Choose backend based on device capabilities
+const getBackend = () => {
+    if (isTouchDevice()) {
+        return TouchBackend;
+    }
+    return HTML5Backend;
+};
+
+// Touch backend options
+const touchBackendOptions = {
+    enableMouseEvents: true,
+    delay: 150,
+    delayTouchStart: 150,
+    touchSlop: 16,
 };
 
 function AppRoutesWithAnimation() {
@@ -104,7 +97,10 @@ function App() {
     return (
         <OverlayContext.Provider value={{ setShowOverlay }}>
             <AuthProvider>
-                <DndProvider backend={MultiBackend} options={backendOptions}>
+                <DndProvider 
+                    backend={getBackend()} 
+                    options={isTouchDevice() ? touchBackendOptions : undefined}
+                >
                     <Router>
                         {showOverlay ? <OnloadOverlay /> : <AppRoutesWithAnimation />}
                     </Router>
