@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
-import React, { useState, useEffect, createContext } from 'react';
+import { useState, useEffect, createContext } from 'react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { ToastContainer } from 'react-toastify';

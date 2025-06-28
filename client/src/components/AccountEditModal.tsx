@@ -47,7 +47,6 @@ const AccountEditModal: React.FC<AccountEditModalProps> = ({ isOpen, onClose, cu
         e.preventDefault();
         if (!currentUser) return;
         setLoading(true);
-        let success = true;
         let errorMsg = '';
         try {
             // If email or password is changing, re-authenticate
@@ -78,7 +77,6 @@ const AccountEditModal: React.FC<AccountEditModalProps> = ({ isOpen, onClose, cu
             toast.success('Profile updated successfully!');
             setIsVisible(false); // Trigger exit animation
         } catch (err: any) {
-            success = false;
             errorMsg = err.message || 'An error occurred while updating your profile.';
             toast.error(errorMsg);
         } finally {
